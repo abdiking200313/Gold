@@ -1,0 +1,81 @@
+﻿@page "/article"
+@using HtmlAgilityPack
+
+@inject NavigationManager NavigationManager
+@inject IHttpClientFactory IHttpClientFactory
+
+
+<h3>Article Content</h3>
+
+@if (!string.IsNullOrEmpty(articleContent))
+{
+    <div>
+        @articleContent
+    </div>
+}
+else if (error != null)
+{
+    <h1 class="text-danger">@error</h1>
+}
+else
+{
+    <p>Loading article...</p>
+}
+
+
+
+
+@code {
+    private string articleUrl;
+    private string articleContent;
+    private string error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = new Uri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        articleUrl = query["url"];
+
+        if (!string.IsNullOrEmpty(articleUrl))
+        {
+            await FetchArticleContent(articleUrl);
+        }
+        else
+        {
+            error = "Invalid article URL.";
+        }
+    }
+
+    private async Task FetchArticleContent(string url)
+    {
+        try
+        {
+            var client = IHttpClientFactory.CreateClient();
+            var response = await client.GetStringAsync(url);
+
+            // Load HTML content into HtmlDocument
+            var htmlDoc = new HtmlDocument();
+            htmlDoc.LoadHtml(response);
+
+            // Extract the main article content
+            articleContent = ExtractArticleText(htmlDoc);
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to fetch the article content. Error: {ex.Message}";
+        }
+    }
+
+    private string ExtractArticleText(HtmlDocument htmlDoc)
+    {
+        // Modify the XPath or CSS class based on the structure of the website you are scraping
+        var articleNode = htmlDoc.DocumentNode.SelectSingleNode("//div[contains(@class, 'article_container')]");
+
+        if (articleNode != null)
+        {
+            return articleNode.InnerText.Trim();
+        }
+
+        return "Unable to extract the article content.";
+    }
+}

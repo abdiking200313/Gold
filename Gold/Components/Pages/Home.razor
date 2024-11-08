@@ -1,3 +1,152 @@
 ﻿@page "/"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using HtmlAgilityPack
+@inject IHttpClientFactory ClientFactory
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
 
+<h3>Gold</h3>
 
+@if (links == null)
+{
+    <p>Click the button to retrieve links.</p>
+}
+else if (links.Count == 0)
+{
+    <p>No links found.</p>
+}
+else
+{
+    <ul>
+        @foreach (var link in links)
+        {
+            <li><a href="@link" target="_blank">@link</a></li>
+            <button @onclick="() => NavigateToArticlePage(link)">Read</button>
+        }
+    </ul>
+}
+@if (error != null)
+{
+    <h1 class="text-danger">@error</h1>
+}
+@code {
+    private string selectedUrl = "";
+    private string error;
+    private HttpClient httpClient = new HttpClient();
+    private List<Gold> books = new List<Gold>();
+    private int countplus = 1;
+    private List<string> links = new List<string>();
+    List<string> hrefTags = new List<string>();
+
+    // Initialize a list of URLs to scrape
+    private List<Urls> urls = new List<Urls>
+    {
+        new Urls { Url = "https://www.investing.com/currencies/xau-usd-news" }
+        // new Urls { Url = "https://www.kitco.com/" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await FetchLinks();
+    }
+
+    // Method to fetch all links from a specified URL
+    private async Task FetchLinks()
+    {
+        foreach (var singleUrl in urls)
+        {
+            string url = singleUrl.Url;
+            // Create an HTTP client using the injected ClientFactory
+            var client = ClientFactory.CreateClient();
+            try
+            {
+                // Sends an HTTP GET request to the specified URL
+                var response = await client.GetStringAsync(url);
+
+                // Load the response HTML content into an HtmlDocument for parsing
+                var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+                htmlDoc.LoadHtml(response);
+
+                // Extract all <a href> tags that match the specified XPath and append them to the links list
+                var extractedLinks = ExtractAllAHrefTags(htmlDoc);
+                links.AddRange(extractedLinks); // Append to the main list
+            }
+            catch (Exception ex)
+            {
+                error = $"FetchLinks Error: {ex.Message}";
+            }
+        }
+    }
+
+    // Method to extract all <a href> links from an HTML document
+    private List<string> ExtractAllAHrefTags(HtmlAgilityPack.HtmlDocument htmlDoc)
+    {
+        try
+        {
+            // Find all <a> nodes with a specific data-test attribute (only links with "article-title-link")
+            var linkNodes = htmlDoc.DocumentNode.SelectNodes("//a[@data-test='article-title-link' or contains(@class, 'ListItemOneLine_title') and @href]");
+
+            if (linkNodes != null)  // Check if any matching nodes were found
+            {
+                foreach (var link in linkNodes)
+                {
+                    // Get the href attribute value for each <a> link
+                    var hrefValue = link.Attributes["href"].Value;
+
+                    // Add the link to the list of hrefs
+                    hrefTags.Add(hrefValue);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            error = $"ExtractAllAHrefTags : {e.Message}";
+        }
+        return hrefTags;
+    }
+
+    private async Task<List<string>> GetArticleFromUrl()
+    {
+        var articlecontent = new List<string>();
+
+        foreach (var link in links)
+        {
+            string fullUrl = link.StartsWith("http") ? link : $"https://www.investing.com{link}";
+
+            var response = await httpClient.GetStringAsync(fullUrl);
+
+            var htmlDoc = new HtmlAgilityPack.HtmlDocument();
+            htmlDoc.LoadHtml(response);
+
+            var articleNode = htmlDoc.DocumentNode.SelectSingleNode("//div[contains(@class, 'article-content-class')]");
+
+            if (articleNode != null)
+            {
+                var articleText = articleNode.InnerText.Trim();
+                articlecontent.Add(articleText);
+            }
+        }
+        return articlecontent;
+    }
+    private void NavigateToArticlePage(string link)
+    {
+        // Set the selected URL
+        selectedUrl = link;
+
+        // Navigate to the article page with the URL parameter
+        NavigationManager.NavigateTo($"/article?url={selectedUrl}");
+    }
+
+    public class Gold
+    {
+        public int Id { get; set; }
+        public string Title { get; set; }
+    }
+
+    public class Urls
+    {
+        public string Url { get; set; }
+    }
+}
